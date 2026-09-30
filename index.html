@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>How an AI coding assistant actually fails</title>
+<meta name="description" content="A log of 41 times my AI coding assistant let me down, the checks I built to catch it, and which ones held up when measured.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How an AI coding assistant actually fails, and which fixes held up">
+<meta property="og:description" content="34 of 41 failures were stopping early or working on the wrong thing. Narrow, measured checks held up; a general AI judge did not.">
+<meta property="og:url" content="https://xxswiftxx.github.io/ai-coding-assistant-failures/">
+<meta property="og:image" content="https://xxswiftxx.github.io/ai-coding-assistant-failures/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://xxswiftxx.github.io/ai-coding-assistant-failures/og-image.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+:root{--paper:#f5f6f3;--ink:#1a1d21;--soft:#545c66;--line:#dcdfda;--accent:#1f5f8b;--row:#eceee9;--card:#ffffff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--paper:#14171a;--ink:#e6e8e4;--soft:#a9b0b8;--line:#2d3237;--accent:#7fb4dc;--row:#1c2024;--card:#1a1e22;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.65 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:max(48px,env(safe-area-inset-top)) 20px 80px}
+h1,h2{font-family:"Newsreader",Georgia,"Times New Roman",serif;font-weight:600;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:clamp(30px,5vw,42px);line-height:1.12;margin:0 0 10px}
+h2{font-size:25px;line-height:1.25;margin:44px 0 10px}
+.byline{font:500 13px "JetBrains Mono",ui-monospace,monospace;color:var(--soft);margin-bottom:28px}
+.lead{font-size:19px}
+.note{color:var(--soft);font-size:15px;border-left:3px solid var(--line);padding-left:14px}
+p{margin:0 0 14px}
+ul,ol{padding-left:22px;margin:0 0 14px}
+li{margin:6px 0}
+li ul{margin-top:6px}
+strong{font-weight:600}
+.tablewrap{overflow-x:auto;margin:18px 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:600px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 12px "JetBrains Mono",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--soft)}
+tr:last-child td{border-bottom:0}
+td.n{font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+.box{background:var(--row);border-radius:8px;padding:14px 16px;margin:16px 0}
+.box p:last-child{margin:0}
+a{color:var(--accent)}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--soft);font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<h1>How an AI coding assistant actually fails, and which fixes held up</h1>
+<div class="byline">September 2026 · field notes from one heavy user</div>
+
+<p class="lead">I kept a log of 41 times my AI coding assistant let me down, built checks to catch those failures, and measured whether the checks worked. Two failure types made up 34 of the 41: stopping with work still open (19) and working on the wrong thing (15). Only one check earned the right to block the assistant, and it targets a failure that appeared once. For the two big failure types, I have no check good enough to block yet.</p>
+<p class="note">This is one user, mostly self-graded labels, and small samples (4 to about 80 cases per test). It shows which kinds of failure happened to me, not how often they happen in general.</p>
+
+<h2>How it is wired</h2>
+<p>After each of the assistant's replies, small scripts read the conversation. Some are plain rules. Others ask a second AI model a yes-or-no question; I call those "judges". A "flag" is a yes. A "block" stops the reply and sends it back to the assistant with a note. A "lesson" is a correction I saved from an earlier slip.</p>
+
+<h2>What I did, and what the AI did</h2>
+<p>The assistant wrote most of the code, and an AI agent designed and ran most of the measurements. I set the goals, approved the pass bars, graded cases myself where it mattered, and decided what to keep, demote or cut. Outside reviews caught real errors, including numbers I later withdrew.</p>
+<p>Two decisions show the judgment I stand behind. I took blocking power away from a judge after it wrongly blocked three replies in a row. And I withdrew every rate from my first analysis when a small rule change moved one count from 0 to 7.</p>
+
+<h2>The five ways it failed me, and what catches each</h2>
+<p>I confirmed 57 failures and analyzed 41 of them in detail. I did not search this log for made-up facts, so it says nothing about how often the assistant fabricates.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Failure (my label)</th><th>What it looked like</th><th>Cases</th><th>Check aimed at it</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Stopped with work still open</td><td>Ended its turn early, often offering to continue later</td><td class="n">19</td><td>None yet</td><td>Open; the least certain label (see Limits)</td></tr>
+<tr><td>Worked on the wrong thing</td><td>Solved a nearby problem instead of the one asked</td><td class="n">15</td><td>None yet</td><td>Open</td></tr>
+<tr><td>Did part, not all</td><td>Handled some listed steps, quietly skipped others</td><td class="n">5</td><td>None yet</td><td>Open</td></tr>
+<tr><td>Said done when it was not</td><td>Reported success with no edits or commands behind it</td><td class="n">1</td><td>A rule that blocks this</td><td>Blocking</td></tr>
+<tr><td>Ignored a standing rule</td><td>Broke an instruction given for every session</td><td class="n">1</td><td>Repeat-mistake checker</td><td>Asks me; does not block</td></tr>
+</tbody></table></div>
+
+<h2>What did not work</h2>
+<p>My first idea was a second AI that reads the conversation and answers "did it do everything asked?". It never got good enough to block.</p>
+<ul>
+<li><strong>The general judge was right on about 3 of every 4 flags.</strong> Asking it several times and acting only when it was confident raised that to about 85%, but only on the two-thirds of cases where it was sure. When it had blocking power, it wrongly blocked three replies in a row, so I demoted it to logging only.</li>
+<li><strong>Requiring several wordings to agree was too strict.</strong> On the repeat-mistake check, all five wordings agreed on none of 32 real repeats, so it could never fire. I did not test majority voting.</li>
+<li><strong>A pick-one-from-a-list question was unstable.</strong> Asking "which of these past lessons does this break?" gave different answers when I only changed which other lessons were on the list.</li>
+<li><strong>My own correction detector failed on raw chat.</strong> Tuned on pre-filtered messages, it was right on only 4 of its 30 flags on unfiltered conversation. It mistook questions and new requests for complaints.</li>
+<li><strong>An AI grader could not reproduce my labels.</strong> One strong model matched my grades on 8 of 16 cases, which is a coin flip for a yes-or-no label. After examples it matched 6 of 10 on a smaller set. That is one model and tiny samples.</li>
+</ul>
+
+<h2>What worked, and how sure I am</h2>
+<ol>
+<li><strong>A narrow rule.</strong> It blocks a reply that claims "done" when the turn made no edits and ran no commands on a request to do something. On an automatic replay without human labels it was right 93% of the time; I did not record the case count. It is the only check allowed to block, and it targets a failure that appeared once in my log.</li>
+<li><strong>Checking one past lesson at a time.</strong> To catch repeated mistakes, the checker compares a new correction with a short list of the most similar saved lessons, one by one. On 44 cards I graded without seeing its answers, 24 of its 25 flags were right. I marked 11 cards unsure, and the cards were pre-selected. With a sample this small the true rate could be as low as about 82%, so it asks me instead of blocking. The short list misses about a quarter of real repeats.</li>
+<li><strong>Judging the code, not the claim.</strong> For code fixes, a separate tool accepts a change only if a test failed before it and passes after. Only 4 of my 10 projects had runnable tests, in three languages. In each of those 4 I planted a one-character bug, and each time the assistant restored the exact original line; an independent re-run of the test then passed. That is one run per project.
+<ul><li>On one sample task, 4 of 40 mechanically broken versions of the code slipped past its checks. When an AI wrote the breaks, 4 of 10 slipped past. That suggests mechanical breaks can overstate how good tests are, but the sample is small.</li></ul></li>
+</ol>
+<div class="box">
+<p><strong>Promising, not established:</strong> before deciding whether a message is a correction, first work out who the criticism is aimed at. On 60 unseen messages this was right on 6 of 7 flags and found 6 of 8 real corrections. An AI labeled those 60, and I have not checked them myself.</p>
+<p><strong>Design decisions, not results:</strong> a saved lesson may block only after a long unbroken run of catches I confirmed, long enough that a checker that was only 90% accurate would rarely manage it by luck. It is set up so the assistant cannot grade itself. No lesson has earned blocking yet, so nothing blocks by default.</p>
+</div>
+<p>Each feature release also got an adversarial review from a separate AI reviewer, and one outside person reviewed the tools once. Both found real problems.</p>
+
+<h2>Where I was wrong</h2>
+<p>I first estimated how often the assistant dropped work by checking whether it had edited anything just before I complained. That logic is wrong: it can edit one thing and still abandon two others. An outside review pushed back. When I rebuilt the counts, a small change to the rule moved one count from 0 to 7, so I withdrew every rate from that analysis. That is why this piece gives counts, not percentages.</p>
+
+<h2>Limits</h2>
+<ul>
+<li><strong>One user, small samples.</strong> Each test ran on between 4 and about 80 cases. Most labels are mine; where an AI or an automatic check did the labeling, I say so.</li>
+<li><strong>Soft labels.</strong> A stricter automatic re-check shrank a similar "stopped early" label from 23 cases to 2. The biggest row in the table is also the least certain.</li>
+<li><strong>AI-assisted from end to end.</strong> The assistant wrote most of the code, and an AI agent ran most of the measurements.</li>
+<li><strong>No outside users yet.</strong> One reviewer has looked at the tools; no one else has run them long enough to report back.</li>
+</ul>
+
+<h2>What I would suggest to people building these tools</h2>
+<ol>
+<li><strong>Measure a check before giving it power.</strong> A narrow rule with a known accuracy was usable; a general judge at about 75% was not.</li>
+<li><strong>Check the work, not the report of the work.</strong> A passing test means little until you have seen it fail without the fix.</li>
+<li><strong>Let the owner grade.</strong> The one model I tried could not reproduce my labels. I am betting that grading right after a slip beats a review pile later; that part is built but not yet measured.</li>
+</ol>
+
+<footer>Numbers come from my own logs. Happy to walk through the tooling behind this in conversation.</footer>
+</main>
+</body>
+</html>
